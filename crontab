@@ -1,2 +1,0 @@
-# Run every minute
-* * * * * node /app/dist/index.js >> /var/log/cron/state-transition.log 2>&1

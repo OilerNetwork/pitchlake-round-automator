@@ -18,6 +18,12 @@ enum OptionRoundState {
     Settled = 3
 }
 
+type FossilRequest = {
+    vaultAddress: string,    
+    timestamp: number,      
+    identifier: string   
+};
+
 export class StateTransitionService {
     private logger: Logger;
     private provider: RpcProvider;
@@ -101,22 +107,53 @@ export class StateTransitionService {
         }
     }
 
+    private formatTimeLeft(current: number, target: number): string {
+        const secondsLeft = Number(target) - Number(current);
+        const hoursLeft = secondsLeft / 3600;
+        return `${secondsLeft} seconds (${hoursLeft.toFixed(2)} hrs)`;
+    }
+
     private async handleOpenState(roundContract: Contract, currentTime: number): Promise<void> {
         try {
-            const auctionStartTime = await roundContract.get_auction_start_date();
+            // Check if this is the first round that needs initialization
+            const reservePrice = await roundContract.get_reserve_price();
             
-            if (currentTime >= auctionStartTime) {
-                this.logger.info("Starting auction...");
+            if (reservePrice === 0n) {
+                this.logger.info("First round detected - needs initialization");
+                const requestData = await this.vaultContract.get_request_to_start_first_round();
                 
-                const { transaction_hash } = await this.vaultContract.start_auction();
-                await this.provider.waitForTransaction(transaction_hash);
+                // Format request data for timestamp check
+                const requestTimestamp = Number(requestData[1]);
                 
-                this.logger.info("Auction started successfully", {
-                    transactionHash: transaction_hash
-                });
-            } else {
-                this.logger.info(`Waiting for auction start time. Current: ${currentTime}, Start: ${auctionStartTime}`);
+                // Check if Fossil has required blocks before proceeding
+                if (!await this.fossilHasAllBlocks(requestTimestamp)) {
+                    return;
+                }
+                
+                // Initialize first round
+                await this.sendFossilRequest(this.formatRawToFossilRequest(requestData));
+
+                // The fossil request takes some time to process, so we'll exit here
+                // and let the cron handle the state transition in the next iteration
+                return;
             }
+
+            // Existing auction start logic
+            const auctionStartTime = Number(await roundContract.get_auction_start_date());
+            
+            if (currentTime < auctionStartTime) {
+                this.logger.info(`Waiting for auction start time. Time left: ${this.formatTimeLeft(currentTime, auctionStartTime)}`);
+                return;
+            }
+
+            this.logger.info("Starting auction...");
+            
+            const { transaction_hash } = await this.vaultContract.start_auction();
+            await this.provider.waitForTransaction(transaction_hash);
+            
+            this.logger.info("Auction started successfully", {
+                transactionHash: transaction_hash
+            });
         } catch (error) {
             this.logger.error("Error handling Open state:", error);
             throw error;
@@ -125,84 +162,131 @@ export class StateTransitionService {
 
     private async handleAuctioningState(roundContract: Contract, currentTime: number): Promise<void> {
         try {
-            const auctionEndTime = await roundContract.get_auction_end_date();
+            const auctionEndTime = Number(await roundContract.get_auction_end_date());
             
-            if (currentTime >= auctionEndTime) {
-                this.logger.info("Ending auction...");
-            
-                const { transaction_hash } = await this.vaultContract.end_auction();
-                await this.provider.waitForTransaction(transaction_hash);
-                
-                this.logger.info("Auction ended successfully", {
-                    transactionHash: transaction_hash
-                });
-            } else {
-                this.logger.info(`Waiting for auction end time. Current: ${currentTime}, End: ${auctionEndTime}`);
+            if (currentTime < auctionEndTime) {
+                this.logger.info(`Waiting for auction end time. Time left: ${this.formatTimeLeft(currentTime, auctionEndTime)}`);
+                return;
             }
+
+            this.logger.info("Ending auction...");
+        
+            const { transaction_hash } = await this.vaultContract.end_auction();
+            await this.provider.waitForTransaction(transaction_hash);
+            
+            this.logger.info("Auction ended successfully", {
+                transactionHash: transaction_hash
+            });
         } catch (error) {
             this.logger.error("Error handling Auctioning state:", error);
             throw error;
         }
     }
 
+    private async fossilHasAllBlocks(requestTimestamp: number): Promise<boolean> {
+        const latestFossilBlockResponse = await axios.get(
+            `${this.fossilApiUrl}/latest_block`
+        );
+        
+        const latestFossilBlockTimestamp = latestFossilBlockResponse.data.block_timestamp;
+
+        this.logger.debug("Latest Fossil block info:", {
+            blockNumber: latestFossilBlockResponse.data.latest_block_number,
+            blockTimestamp: latestFossilBlockTimestamp,
+            requestTimestamp
+        });
+
+        if (latestFossilBlockTimestamp < requestTimestamp) {
+            this.logger.info(`Waiting for Fossil blocks to reach settlement timestamp. Time difference: ${this.formatTimeLeft(latestFossilBlockTimestamp, requestTimestamp)}`);
+            return false;
+        }
+
+        return true;
+    }
+
+    private formatRawToFossilRequest(rawData: any): FossilRequest {
+        return {
+            vaultAddress: "0x" + rawData[0].toString(16),
+            timestamp: Number(rawData[1]),
+            identifier: "0x" + rawData[2].toString(16)
+        };
+    }
+
+    private async sendFossilRequest(requestData: FossilRequest): Promise<void> {
+        // Format request data
+        const vaultAddress = requestData.vaultAddress;
+        const requestTimestamp = Number(requestData.timestamp);
+        const identifier = requestData.identifier;
+
+        const clientAddressRaw = await this.vaultContract.get_fossil_client_address();
+        const clientAddress = "0x" + clientAddressRaw.toString(16);
+
+        // Get round duration from vault contract
+        const roundDuration = Number(await this.vaultContract.get_round_duration());
+
+        // Calculate windows for each metric
+        const twapWindow = roundDuration;
+        const volatilityWindow = roundDuration * 3;
+        const reservePriceWindow = roundDuration * 3;
+
+        this.logger.debug("Calculation windows:", {
+            roundDuration,
+            twapWindow,
+            volatilityWindow,
+            reservePriceWindow
+        });
+
+        const fossilRequest = {
+            identifiers: [identifier],
+            params: {
+                twap: [requestTimestamp - twapWindow, requestTimestamp],
+                volatility: [requestTimestamp - volatilityWindow, requestTimestamp],
+                reserve_price: [requestTimestamp - reservePriceWindow, requestTimestamp]
+            },
+            client_info: {
+                client_address: clientAddress,
+                vault_address: vaultAddress,
+                timestamp: requestTimestamp
+            }
+        };
+
+        this.logger.info("Sending request to Fossil API");
+        this.logger.debug({ request: fossilRequest });
+
+        const response = await axios.post(
+            `${this.fossilApiUrl}/pricing_data`,
+            fossilRequest,
+            {
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": this.fossilApiKey
+                }
+            }
+        );
+
+        this.logger.info("Fossil request submitted. Job ID: " + response.data.job_id);
+    }
+
     private async handleRunningState(roundContract: Contract, currentTime: number): Promise<void> {
         try {
-            const settlementTime = await roundContract.get_option_settlement_date();
+            const settlementTime = Number(await roundContract.get_option_settlement_date());
             
-            if (currentTime >= settlementTime) {
-                this.logger.info("Settlement time reached, preparing Fossil request...");
-                
-                const requestData = await this.vaultContract.get_request_to_settle_round();
-                this.logger.info("Request data received:", requestData);
-                
-                // Format request for Fossil API
-                const vaultAddress = "0x" + requestData[0].toString(16);
-                const timestamp = Number(requestData[1]);
-                const identifier = "0x" + requestData[2].toString(16);
-
-                const clientAddressRaw = await this.vaultContract.get_fossil_client_address();
-                const clientAddress = "0x" + clientAddressRaw.toString(16);
-
-                this.logger.info("Parsed timestamp:", timestamp);
-
-                const ONE_MONTH_SECONDS = 2592000;
-                const ONE_WEEK_SECONDS = 604800;
-
-                const fossilRequest = {
-                    identifiers: [identifier],
-                    params: {
-                        twap: [timestamp - ONE_WEEK_SECONDS, timestamp],
-                        volatility: [timestamp - ONE_WEEK_SECONDS, timestamp],
-                        reserve_price: [timestamp - ONE_MONTH_SECONDS, timestamp]
-                    },
-                    client_info: {
-                        client_address: clientAddress,
-                        vault_address: vaultAddress,
-                        timestamp
-                    }
-                };
-
-                this.logger.info("Sending request to Fossil API", { request: fossilRequest });
-
-                const response = await axios.post(
-                    `${this.fossilApiUrl}/pricing_data`,
-                    fossilRequest,
-                    {
-                        headers: {
-                            "Content-Type": "application/json",
-                            "x-api-key": this.fossilApiKey
-                        }
-                    }
-                );
-
-                const jobId = response.data.job_id;
-                this.logger.info("Fossil request submitted", { 
-                    jobId,
-                    response: response.data 
-                });
-            } else {
-                this.logger.info(`Waiting for settlement time. Current: ${currentTime}, Settlement: ${settlementTime}`);
+            if (currentTime < settlementTime) {
+                this.logger.info(`Waiting for settlement time. Time left: ${this.formatTimeLeft(currentTime, settlementTime)}`);
+                return;
             }
+
+            this.logger.info("Settlement time reached, preparing Fossil request...");
+            
+            const rawRequestData = await this.vaultContract.get_request_to_settle_round();
+            const requestData = this.formatRawToFossilRequest(rawRequestData);
+            
+            // Check if Fossil has required blocks before proceeding
+            if (!await this.fossilHasAllBlocks(Number(requestData.timestamp))) {
+                return;
+            }
+
+            await this.sendFossilRequest(requestData);
         } catch (error) {
             this.logger.error("Error handling Running state:", error);
             throw error;
