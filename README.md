@@ -7,10 +7,10 @@ This service automates the state transitions of vault rounds, triggering state t
 The automator monitors and manages the following round state transitions:
 
 - **Open → Auctioning**: Triggered when auction start time is reached
+    - For newly deployed vaults, the open state handler initializes the reserve price for the first round
 - **Auctioning → Running**: Triggered when auction end time is reached
 - **Running → Settled**: Triggered when option settlement date is reached
-
-** Note ** Upon round settlement, a new round is being deployed in the same tx.
+    - Upon round settlement, a new round is being deployed in the same tx.
 
 ## Config
 
