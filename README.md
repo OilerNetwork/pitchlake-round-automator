@@ -1,6 +1,6 @@
-# Vault Automator
+# Pitch Lake Round Automator
 
-This service automates the state transitions of vault rounds, triggering state transition when the time is right.
+This service automates the state transitions of rounds for specific vaults, triggering state transition when the time is right.
 
 ## Round State Automation
 
