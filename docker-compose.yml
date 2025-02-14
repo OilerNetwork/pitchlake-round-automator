@@ -1,13 +1,42 @@
 services:
-  state-transition-cron:
+  vault1:
     build: .
     environment:
       - STARKNET_RPC=${STARKNET_RPC}
       - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
       - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
-      - VAULT_ADDRESS=${VAULT_ADDRESS}
       - FOSSIL_API_KEY=${FOSSIL_API_KEY}
       - FOSSIL_API_URL=${FOSSIL_API_URL}
+      - VAULT_ADDRESS=${VAULT_ADDRESS_1}
+      - CRON_INTERVAL=${CRON_INTERVAL_1}
     volumes:
-      - ./logs:/var/log/cron
+      - ./logs/vault1:/var/log/cron
+    restart: always
+
+  vault2:
+    build: .
+    environment:
+      - STARKNET_RPC=${STARKNET_RPC}
+      - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
+      - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
+      - FOSSIL_API_KEY=${FOSSIL_API_KEY}
+      - FOSSIL_API_URL=${FOSSIL_API_URL}
+      - VAULT_ADDRESS=${VAULT_ADDRESS_2}
+      - CRON_INTERVAL=${CRON_INTERVAL_2}
+    volumes:
+      - ./logs/vault2:/var/log/cron
     restart: always 
+
+  vault3:
+    build: .
+    environment:
+      - STARKNET_RPC=${STARKNET_RPC}
+      - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
+      - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
+      - FOSSIL_API_KEY=${FOSSIL_API_KEY}
+      - FOSSIL_API_URL=${FOSSIL_API_URL}
+      - VAULT_ADDRESS=${VAULT_ADDRESS_3}
+      - CRON_INTERVAL=${CRON_INTERVAL_3}
+    volumes:
+      - ./logs/vault3:/var/log/cron
+    restart: always
