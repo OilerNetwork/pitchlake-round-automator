@@ -13,30 +13,35 @@ services:
       - ./logs/vault1:/var/log/cron
     restart: always
 
-  vault2:
-    build: .
-    environment:
-      - STARKNET_RPC=${STARKNET_RPC}
-      - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
-      - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
-      - FOSSIL_API_KEY=${FOSSIL_API_KEY}
-      - FOSSIL_API_URL=${FOSSIL_API_URL}
-      - VAULT_ADDRESS=${VAULT_ADDRESS_2}
-      - CRON_INTERVAL=${CRON_INTERVAL_2}
-    volumes:
-      - ./logs/vault2:/var/log/cron
-    restart: always 
+  ### ===================================================
+  # Add a config for each vault you want to automate
+  # Make sure the VAULT_ADDRESS and CRON_INTERVAL exist in .env and are set correctly
+  ### ===================================================
 
-  vault3:
-    build: .
-    environment:
-      - STARKNET_RPC=${STARKNET_RPC}
-      - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
-      - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
-      - FOSSIL_API_KEY=${FOSSIL_API_KEY}
-      - FOSSIL_API_URL=${FOSSIL_API_URL}
-      - VAULT_ADDRESS=${VAULT_ADDRESS_3}
-      - CRON_INTERVAL=${CRON_INTERVAL_3}
-    volumes:
-      - ./logs/vault3:/var/log/cron
-    restart: always
+  # vault2:
+  #   build: .
+  #   environment:
+  #     - STARKNET_RPC=${STARKNET_RPC}
+  #     - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
+  #     - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
+  #     - FOSSIL_API_KEY=${FOSSIL_API_KEY}
+  #     - FOSSIL_API_URL=${FOSSIL_API_URL}
+  #     - VAULT_ADDRESS=${VAULT_ADDRESS_2}
+  #     - CRON_INTERVAL=${CRON_INTERVAL_2}
+  #   volumes:
+  #     - ./logs/vault2:/var/log/cron
+  #   restart: always 
+
+  # vault3:
+  #   build: .
+  #   environment:
+  #     - STARKNET_RPC=${STARKNET_RPC}
+  #     - STARKNET_PRIVATE_KEY=${STARKNET_PRIVATE_KEY}
+  #     - STARKNET_ACCOUNT_ADDRESS=${STARKNET_ACCOUNT_ADDRESS}
+  #     - FOSSIL_API_KEY=${FOSSIL_API_KEY}
+  #     - FOSSIL_API_URL=${FOSSIL_API_URL}
+  #     - VAULT_ADDRESS=${VAULT_ADDRESS_3}
+  #     - CRON_INTERVAL=${CRON_INTERVAL_3}
+  #   volumes:
+  #     - ./logs/vault3:/var/log/cron
+  #   restart: always
