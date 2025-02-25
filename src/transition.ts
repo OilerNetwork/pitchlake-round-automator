@@ -64,11 +64,6 @@ export class StateTransitionService {
 
     async checkAndTransition(): Promise<void> {
         try {
-            // Test connection before proceeding
-            this.logger.info(`Checking RPC connection...`);
-            await this.provider.getBlockNumber();
-            this.logger.info(`Connected to RPC successfully`);
-            
             const roundId = await this.vaultContract.get_current_round_id();
             const roundAddress = await this.vaultContract.get_round_address(roundId);
 
@@ -136,6 +131,7 @@ export class StateTransitionService {
                 
                 // Check if Fossil has required blocks before proceeding
                 if (!await this.fossilHasAllBlocks(requestTimestamp)) {
+                    this.logger.info(`Fossil blocks haven't reached the request timestamp yet`);
                     return;
                 }
                 
@@ -206,7 +202,6 @@ export class StateTransitionService {
         });
 
         if (latestFossilBlockTimestamp < requestTimestamp) {
-            this.logger.info(`Waiting for Fossil blocks to reach settlement timestamp. Time difference: ${this.formatTimeLeft(latestFossilBlockTimestamp, requestTimestamp)}`);
             return false;
         }
 
@@ -292,6 +287,7 @@ export class StateTransitionService {
             
             // Check if Fossil has required blocks before proceeding
             if (!await this.fossilHasAllBlocks(Number(requestData.timestamp))) {
+                this.logger.info(`Fossil blocks haven't reached the request timestamp yet`);
                 return;
             }
 
