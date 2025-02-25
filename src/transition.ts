@@ -5,7 +5,6 @@ import {
     CairoCustomEnum,
 } from "starknet";
 import { Logger } from "winston";
-import { setupLogger } from "./logger";
 import { ABI as VaultAbi } from "./abi/vault";
 import { ABI as OptionRoundAbi } from "./abi/optionRound";
 import axios from "axios";
@@ -31,6 +30,7 @@ export class StateTransitionService {
     private vaultContract: Contract;
     private fossilApiKey: string;
     private fossilApiUrl: string;
+    private vaultAddress: string;
 
     constructor(
         rpcUrl: string,
@@ -38,9 +38,10 @@ export class StateTransitionService {
         accountAddress: string,
         vaultAddress: string,
         fossilApiKey: string,
-        fossilApiUrl: string
+        fossilApiUrl: string,
+        logger: Logger
     ) {
-        this.logger = setupLogger();
+        this.logger = logger;
         this.provider = new RpcProvider({ nodeUrl: rpcUrl });
         this.account = new Account(
             this.provider,
@@ -54,13 +55,18 @@ export class StateTransitionService {
         );
         this.fossilApiKey = fossilApiKey;
         this.fossilApiUrl = fossilApiUrl;
+        this.vaultAddress = vaultAddress;
+    }
+
+    getVaultAddress(): string {
+        return this.vaultAddress;
     }
 
     async checkAndTransition(): Promise<void> {
         try {
             // Test connection before proceeding
             this.logger.info(`Checking RPC connection...`);
-            await this.provider.getChainId();
+            await this.provider.getBlockNumber();
             this.logger.info(`Connected to RPC successfully`);
             
             const roundId = await this.vaultContract.get_current_round_id();
@@ -102,7 +108,10 @@ export class StateTransitionService {
                     break;
             }
         } catch (error) {
-            this.logger.error("Error in transition check:", error);
+            this.logger.error({
+                message: "Error in transition check",
+                error: error
+            });
             throw error;
         }
     }
@@ -276,7 +285,7 @@ export class StateTransitionService {
                 return;
             }
 
-            this.logger.info("Settlement time reached, preparing Fossil request...");
+            this.logger.info("Settlement time reached");
             
             const rawRequestData = await this.vaultContract.get_request_to_settle_round();
             const requestData = this.formatRawToFossilRequest(rawRequestData);
