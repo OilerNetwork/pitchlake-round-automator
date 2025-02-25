@@ -17,12 +17,11 @@ RUN npm run build
 # Create log directory
 RUN mkdir -p /var/log/cron
 
-# Add crontab file
-COPY crontab /etc/crontabs/root
+# Make generate-crontab.sh executable
+RUN chmod +x generate-crontab.sh
 
 # Script to run both crond and tail logs
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x entrypoint.sh
 
 # Run the entrypoint script
-CMD ["/entrypoint.sh"] 
+CMD ["./entrypoint.sh"] 
