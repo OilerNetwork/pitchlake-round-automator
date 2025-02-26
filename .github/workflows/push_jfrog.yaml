@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix-docker
 
 env:
   DOCKER_REGISTRY: nethermind.jfrog.io

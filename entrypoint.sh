@@ -7,8 +7,8 @@ touch /var/log/cron/state-transition.log
 # Generate crontab file
 ./generate-crontab.sh
 
-# Start crond in background
-crond -b -l 8
+# Start cron service
+service cron start
 
 # Tail the logs
-tail -f /var/log/cron/state-transition.log 
+tail -f /var/log/cron/state-transition.log
