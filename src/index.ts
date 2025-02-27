@@ -44,10 +44,7 @@ logger.info(`Monitoring ${services.length} vaults: ${vaultAddresses}`);
 Promise.allSettled(services.map(service =>
     service.checkAndTransition()
         .catch(error => {
-            logger.error({
-                message: `Error in state transition check for vault ${service.getVaultAddress()}:`,
-                error: error
-            });
+            logger.error(`Error in state transition check for vault ${service.getVaultAddress()}:`, error);
             return Promise.reject(error);
         })
 ))

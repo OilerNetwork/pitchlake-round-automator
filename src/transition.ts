@@ -63,51 +63,46 @@ export class StateTransitionService {
     }
 
     async checkAndTransition(): Promise<void> {
-        try {
-            const roundId = await this.vaultContract.get_current_round_id();
-            const roundAddress = await this.vaultContract.get_round_address(roundId);
+        const roundId = await this.vaultContract.get_current_round_id();
+        const roundAddress = await this.vaultContract.get_round_address(roundId);
 
-            // Convert decimal address to hex
-            const roundAddressHex = "0x" + BigInt(roundAddress).toString(16);
-            this.logger.info(`Checking round ${roundId} at ${roundAddressHex}`);
+        // Convert decimal address to hex
+        const roundAddressHex = "0x" + BigInt(roundAddress).toString(16);
+        this.logger.info(`Checking round ${roundId} at ${roundAddressHex}`);
 
-            const roundContract = new Contract(
-                OptionRoundAbi,
-                roundAddressHex,
-                this.account
-            );
-            
-            const stateRaw = await roundContract.get_state();
-            const state = (stateRaw as CairoCustomEnum).activeVariant();
+        const roundContract = new Contract(
+            OptionRoundAbi,
+            roundAddressHex,
+            this.account
+        );
+        
+        const stateRaw = await roundContract.get_state();
+        const state = (stateRaw as CairoCustomEnum).activeVariant();
 
-            const stateEnum = OptionRoundState[state as keyof typeof OptionRoundState];
-            this.logger.info(`Current state: ${state}`);
+        const stateEnum = OptionRoundState[state as keyof typeof OptionRoundState];
+        this.logger.info(`Current state: ${state}`);
 
-            const currentTime = Math.floor(Date.now() / 1000);
+        // Get latest block and its timestamp
+        const latestBlockblock = await this.provider.getBlock('latest');
+        const latestBlockTimestamp = Number(latestBlockblock.timestamp);
+        this.logger.debug(`Using block timestamp: ${latestBlockTimestamp}`);
 
-            switch (stateEnum) {
-                case OptionRoundState.Open:
-                    await this.handleOpenState(roundContract, currentTime);
-                    break;
-                    
-                case OptionRoundState.Auctioning:
-                    await this.handleAuctioningState(roundContract, currentTime);
-                    break;
-                    
-                case OptionRoundState.Running:
-                    await this.handleRunningState(roundContract, currentTime);
-                    break;
-                    
-                case OptionRoundState.Settled:
-                    this.logger.info("Round is settled - no actions possible");
-                    break;
-            }
-        } catch (error) {
-            this.logger.error({
-                message: "Error in transition check",
-                error: error
-            });
-            throw error;
+        switch (stateEnum) {
+            case OptionRoundState.Open:
+                await this.handleOpenState(roundContract, latestBlockTimestamp);
+                break;
+                
+            case OptionRoundState.Auctioning:
+                await this.handleAuctioningState(roundContract, latestBlockTimestamp);
+                break;
+                
+            case OptionRoundState.Running:
+                await this.handleRunningState(roundContract, latestBlockTimestamp);
+                break;
+                
+            case OptionRoundState.Settled:
+                this.logger.info("Round is settled - no actions possible");
+                break;
         }
     }
 
@@ -117,7 +112,7 @@ export class StateTransitionService {
         return `${secondsLeft} seconds (${hoursLeft.toFixed(2)} hrs)`;
     }
 
-    private async handleOpenState(roundContract: Contract, currentTime: number): Promise<void> {
+    private async handleOpenState(roundContract: Contract, latestBlockTimestamp: number): Promise<void> {
         try {
             // Check if this is the first round that needs initialization
             const reservePrice = await roundContract.get_reserve_price();
@@ -146,14 +141,20 @@ export class StateTransitionService {
             // Existing auction start logic
             const auctionStartTime = Number(await roundContract.get_auction_start_date());
             
-            if (currentTime < auctionStartTime) {
-                this.logger.info(`Waiting for auction start time. Time left: ${this.formatTimeLeft(currentTime, auctionStartTime)}`);
+            if (latestBlockTimestamp < auctionStartTime) {
+                this.logger.info(`Waiting for auction start time. Time left: ${this.formatTimeLeft(latestBlockTimestamp, auctionStartTime)}`);
                 return;
             }
 
             this.logger.info("Starting auction...");
             
-            const { transaction_hash } = await this.vaultContract.start_auction();
+            const { suggestedMaxFee: estimatedMaxFee } = await this.account.estimateInvokeFee({
+                contractAddress: this.vaultContract.address,
+                entrypoint: 'start_auction',
+                calldata: [],
+            });
+
+            const { transaction_hash } = await this.vaultContract.start_auction({ maxFee: estimatedMaxFee * 2n });
             await this.provider.waitForTransaction(transaction_hash);
             
             this.logger.info("Auction started successfully", {
@@ -165,18 +166,24 @@ export class StateTransitionService {
         }
     }
 
-    private async handleAuctioningState(roundContract: Contract, currentTime: number): Promise<void> {
+    private async handleAuctioningState(roundContract: Contract, latestBlockTimestamp: number): Promise<void> {
         try {
             const auctionEndTime = Number(await roundContract.get_auction_end_date());
             
-            if (currentTime < auctionEndTime) {
-                this.logger.info(`Waiting for auction end time. Time left: ${this.formatTimeLeft(currentTime, auctionEndTime)}`);
+            if (latestBlockTimestamp < auctionEndTime) {
+                this.logger.info(`Waiting for auction end time. Time left: ${this.formatTimeLeft(latestBlockTimestamp, auctionEndTime)}`);
                 return;
             }
 
             this.logger.info("Ending auction...");
         
-            const { transaction_hash } = await this.vaultContract.end_auction();
+            const { suggestedMaxFee: estimatedMaxFee } = await this.account.estimateInvokeFee({
+                contractAddress: this.vaultContract.address,
+                entrypoint: 'end_auction',
+                calldata: [],
+            });
+
+            const { transaction_hash } = await this.vaultContract.end_auction({ maxFee: estimatedMaxFee * 2n});
             await this.provider.waitForTransaction(transaction_hash);
             
             this.logger.info("Auction ended successfully", {
@@ -268,15 +275,15 @@ export class StateTransitionService {
             }
         );
 
-        this.logger.info("Fossil request submitted. Job ID: " + response.data.job_id);
+        this.logger.info("Fossil request sent. Response: " + JSON.stringify(response.data));
     }
 
-    private async handleRunningState(roundContract: Contract, currentTime: number): Promise<void> {
+    private async handleRunningState(roundContract: Contract, latestBlockTimestamp: number): Promise<void> {
         try {
             const settlementTime = Number(await roundContract.get_option_settlement_date());
             
-            if (currentTime < settlementTime) {
-                this.logger.info(`Waiting for settlement time. Time left: ${this.formatTimeLeft(currentTime, settlementTime)}`);
+            if (latestBlockTimestamp < settlementTime) {
+                this.logger.info(`Waiting for settlement time. Time left: ${this.formatTimeLeft(latestBlockTimestamp, settlementTime)}`);
                 return;
             }
 
