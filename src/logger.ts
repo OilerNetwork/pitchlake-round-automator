@@ -18,11 +18,11 @@ export function setupLogger(label: string): winston.Logger {
         transports: [
             new winston.transports.Console(),
             new winston.transports.File({ 
-                filename: 'error.log', 
+                filename: 'logs/error.log', 
                 level: 'error' 
             }),
             new winston.transports.File({ 
-                filename: 'combined.log' 
+                filename: 'logs/combined.log' 
             })
         ]
     });
