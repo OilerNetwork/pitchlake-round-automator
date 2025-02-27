@@ -10,5 +10,5 @@ services:
       - VAULT_ADDRESSES=${VAULT_ADDRESSES}
       - CRON_SCHEDULE=${CRON_SCHEDULE}
     volumes:
-      - ./logs:/var/log/cron
+      - ./logs:/app/logs
     restart: always
