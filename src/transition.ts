@@ -324,7 +324,6 @@ export class StateTransitionService {
       const rawRequestData =
         await this.vaultContract.get_request_to_settle_round();
 
-
       // then do the same for r1 init too
       const requestData = this.formatRawToFossilRequest(rawRequestData);
 
